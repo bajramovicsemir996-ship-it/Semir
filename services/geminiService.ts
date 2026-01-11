@@ -72,26 +72,24 @@ export const auditActionPlan = async (plant: string, issue: string, actions: any
   const response = await ai.models.generateContent({
     model: "gemini-3-pro-preview",
     contents: `
-      As a member of the corporate CTO team, audit the following action plans for the plant "${plant}" regarding the chronic issue "${issue}".
-      Today's reference date is ${currentDate}.
+      As a member of the corporate CTO team, perform a granular audit of the operational performance for "${plant}".
+      
+      STRICT RULES:
+      1. DO NOT include any conversational text, introductory remarks, or concluding remarks in the JSON fields.
+      2. EACH field must contain ONLY its specific data point. 
+      3. DO NOT concatenate status descriptions with the verdict in the "recommendation" or "ctoChallengeQuery" fields.
+      4. You must analyze EVERY individual action plan entry provided below.
+      
+      Audit Mapping requirements:
+      - "actionTitle": Must be the Chronic Issue.
+      - "ctoChallengeQuery": Must be ONLY the pointed question for the manager.
+      - "strategicAnchor": Must be ONLY the name of the technical artifact/proof.
+      - "worthTracking": Must be ONLY "High Priority" or "Routine".
       
       Actions Data:
       ${JSON.stringify(actions, null, 2)}
       
-      Analyze based on:
-      1. Quality: Concrete Action vs Bullshit.
-      2. Remote Trackability: Can CTO team monitor from HQ?
-      3. Strategic Category: Capex/Opex/Maintenance ROI.
-      4. YTD Review: Overdue vs On-Track.
-      5. CEO Alignment: Provide a "CEO Talking Point" for each action—how the plant CEO should view this item.
-      6. Red Flag: Identify if this issue represents a systemic risk that needs upper management visibility.
-      
-      Return a JSON audit with:
-      - overallScore (0-100)
-      - executiveVerdict (CTO tone)
-      - ceoBrief (A 3-sentence summary for the local Plant CEO)
-      - redFlags (Array of strings identifying systemic risks)
-      - audits (Array of individual action audits)
+      Current Reference Date: ${currentDate}
     `,
     config: {
       responseMimeType: "application/json",
@@ -101,13 +99,13 @@ export const auditActionPlan = async (plant: string, issue: string, actions: any
           overallScore: { type: Type.NUMBER },
           executiveVerdict: { type: Type.STRING },
           ceoBrief: { type: Type.STRING },
-          redFlags: { type: Type.ARRAY, items: { type: Type.STRING } },
           audits: {
             type: Type.ARRAY,
             items: {
               type: Type.OBJECT,
               properties: {
                 actionTitle: { type: Type.STRING },
+                sourceActionPlan: { type: Type.STRING },
                 qualityRating: { type: Type.STRING },
                 trackability: { type: Type.STRING },
                 impactCategory: { type: Type.STRING },
@@ -115,14 +113,21 @@ export const auditActionPlan = async (plant: string, issue: string, actions: any
                 recommendation: { type: Type.STRING },
                 justification: { type: Type.STRING },
                 ceoTalkingPoint: { type: Type.STRING },
-                riskLevel: { type: Type.STRING, description: "Low, Medium, High" }
+                riskLevel: { type: Type.STRING },
+                ctoChallengeQuery: { type: Type.STRING, description: "ONLY the question, no prefixes." },
+                strategicAnchor: { type: Type.STRING, description: "ONLY the artifact name." },
+                worthTracking: { type: Type.STRING, description: "High Priority / Routine only." }
               }
             }
           }
         },
-        required: ["overallScore", "executiveVerdict", "ceoBrief", "redFlags", "audits"]
+        required: ["overallScore", "executiveVerdict", "ceoBrief", "audits"]
       }
     }
   });
-  return JSON.parse(response.text || '{}');
+  
+  // Robust parsing to handle potential markdown code blocks in raw response
+  const rawText = response.text || '{}';
+  const cleanJson = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+  return JSON.parse(cleanJson);
 };
